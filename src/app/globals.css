@@ -1,26 +1,45 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --jeop-blue: #0b1ea3;
+  --jeop-blue-deep: #060a52;
+  --jeop-gold: #d4af37;
+  --jeop-value: #d69f4c;
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-jeop-blue: var(--jeop-blue);
+  --color-jeop-blue-deep: var(--jeop-blue-deep);
+  --color-jeop-gold: var(--jeop-gold);
+  --color-jeop-value: var(--jeop-value);
+  --font-display: var(--font-oswald);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+html,
+body {
+  background: #04061f;
+  color: #f8fafc;
+}
+
+.display {
+  font-family: var(--font-oswald), system-ui, sans-serif;
+  letter-spacing: 0.02em;
+}
+
+.tile-shadow {
+  box-shadow: inset 0 0 0 3px rgba(0, 0, 0, 0.35), 0 2px 0 rgba(0, 0, 0, 0.4);
+}
+
+@keyframes pop {
+  from {
+    transform: scale(0.92);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
   }
 }
-
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+.animate-pop {
+  animation: pop 0.18s ease-out;
 }
