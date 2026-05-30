@@ -43,8 +43,10 @@ function shuffle<T>(arr: T[], rand: () => number): T[] {
   }
   return a;
 }
-function clampIdx(n: number): number {
-  return Number.isInteger(n) && n >= 0 && n <= 3 ? n : 0;
+/** Coerce a possibly-stringy answer index into a valid 0–3 option index. */
+function clampIdx(n: unknown): number {
+  const i = Math.trunc(Number(n));
+  return Number.isFinite(i) && i >= 0 && i <= 3 ? i : 0;
 }
 
 /** Ask the writer model to turn one topic into 5 clear MC questions. */
@@ -82,13 +84,9 @@ export async function writeMcCategory(
       model: WRITER_MODEL,
       max_tokens: 1300,
       system: sys,
-      messages: [
-        { role: "user", content: user },
-        { role: "assistant", content: "{" },
-      ],
+      messages: [{ role: "user", content: user }],
     });
-    const text =
-      "{" + msg.content.map((b) => ("text" in b ? b.text : "")).join("");
+    const text = msg.content.map((b) => ("text" in b ? b.text : "")).join("");
     const parsed = extractJson<{
       category: string;
       clues: {
@@ -99,19 +97,19 @@ export async function writeMcCategory(
       }[];
     }>(text);
     const clues = (parsed.clues || []).filter(
-      (c) => c.question && Array.isArray(c.options) && c.options.length === 4
+      (c) => c.question && Array.isArray(c.options) && c.options.length >= 4
     );
     if (clues.length < 5) return null;
     return {
-      category: (parsed.category || topic).toUpperCase(),
+      category: String(parsed.category || topic).toUpperCase(),
       difficulty,
       source,
       clues: clues.slice(0, 5).map((c, i) => ({
         value: BOARD_VALUES[i],
-        question: c.question,
-        options: c.options.slice(0, 4),
+        question: String(c.question),
+        options: c.options.slice(0, 4).map((o) => String(o)),
         answer: clampIdx(c.answer),
-        explainer: c.explainer,
+        explainer: c.explainer ? String(c.explainer) : undefined,
       })),
     };
   } catch (e) {
@@ -138,11 +136,9 @@ export async function generateSubtopics(
       system: sys,
       messages: [
         { role: "user", content: `Theme: "${theme}". Give ${n} sub-topics.` },
-        { role: "assistant", content: "[" },
       ],
     });
-    const text =
-      "[" + msg.content.map((b) => ("text" in b ? b.text : "")).join("");
+    const text = msg.content.map((b) => ("text" in b ? b.text : "")).join("");
     const arr = extractJson<string[]>(text);
     return Array.isArray(arr)
       ? arr.filter((x) => typeof x === "string" && x.trim()).slice(0, n)

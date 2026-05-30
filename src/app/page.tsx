@@ -38,6 +38,7 @@ export default function Home() {
   const [theme, setTheme] = useState("");
   const [themeInput, setThemeInput] = useState("");
   const [regenCol, setRegenCol] = useState<number | null>(null);
+  const [showHelp, setShowHelp] = useState(false);
 
   const level = useMemo(
     () => (stats.total >= 5 ? clamp01(stats.correct / stats.total) : 0.3),
@@ -188,10 +189,13 @@ export default function Home() {
           onApply={applyTheme}
           onClear={clearTheme}
           onRestart={restart}
+          onHelp={() => setShowHelp(true)}
           theme={theme}
           busy={phase === "loading"}
         />
       )}
+
+      {showHelp && <HelpModal onClose={() => setShowHelp(false)} />}
 
       {phase === "loading" && <Loading themed={!!theme} />}
 
@@ -327,6 +331,7 @@ function Toolbar({
   onApply,
   onClear,
   onRestart,
+  onHelp,
   theme,
   busy,
 }: {
@@ -335,6 +340,7 @@ function Toolbar({
   onApply: () => void;
   onClear: () => void;
   onRestart: () => void;
+  onHelp: () => void;
   theme: string;
   busy: boolean;
 }) {
@@ -362,6 +368,13 @@ function Toolbar({
       >
         ↻ Restart
       </button>
+      <button
+        onClick={onHelp}
+        title="How to play"
+        className="display flex h-10 w-10 items-center justify-center rounded-xl border border-edge bg-panel-2 text-sm font-bold text-accent-2 transition hover:border-gold/60"
+      >
+        ?
+      </button>
       {theme && (
         <span className="flex items-center gap-2 rounded-full bg-accent/20 px-3 py-1.5 text-xs text-accent-2">
           Theme: <b className="text-slate-100">{theme}</b>
@@ -374,6 +387,101 @@ function Toolbar({
           </button>
         </span>
       )}
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------- help */
+
+function HelpModal({ onClose }: { onClose: () => void }) {
+  const rows: { icon: string; title: string; body: string }[] = [
+    {
+      icon: "🎬",
+      title: "The board",
+      body: "6 categories × 5 questions. Higher rows are worth more money and get harder. Pick any open tile to play it.",
+    },
+    {
+      icon: "✅",
+      title: "Answering",
+      body: "Every question is plain-English multiple choice — tap an option or press 1–4. Right answers add the tile's value to your score; wrong answers subtract it. A one-line explainer follows each.",
+    },
+    {
+      icon: "🔮",
+      title: "Steer the whole board",
+      body: "Type a theme (e.g. “space”, “90s movies”) and hit Generate. The AI splits your theme into 6 sub-topics and writes a brand-new board of clear questions about it.",
+    },
+    {
+      icon: "↻",
+      title: "Regenerate one column",
+      body: "The little ↻ on any category header rewrites just that column. You'll be asked for a topic/direction — the AI writes 5 fresh questions and resets that column to play.",
+    },
+    {
+      icon: "🔁",
+      title: "Restart",
+      body: "Restart deals a brand-new board and resets your score for this game (your current theme is kept).",
+    },
+    {
+      icon: "★",
+      title: "Daily Double & streaks",
+      body: "One hidden tile is a Daily Double — wager up to your score before seeing the question. Consecutive correct answers build a 🔥 streak.",
+    },
+    {
+      icon: "📊",
+      title: "Skill mix",
+      body: "Your lifetime accuracy is saved on this device and nudges future boards harder or easier — that's the % shown in the header.",
+    },
+    {
+      icon: "🛰️",
+      title: "LIVE category",
+      body: "When enabled, the first column is written fresh from today's real headlines, so the game changes every day.",
+    },
+  ];
+  return (
+    <div
+      onClick={onClose}
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-3 backdrop-blur-sm sm:p-4"
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="animate-pop glass card-shadow max-h-[85vh] w-full max-w-lg overflow-y-auto rounded-3xl p-6 sm:p-8"
+      >
+        <div className="mb-4 flex items-center justify-between">
+          <h2 className="display gold-text text-2xl">How to play</h2>
+          <button
+            onClick={onClose}
+            className="flex h-8 w-8 items-center justify-center rounded-lg bg-edge text-lg text-slate-200 transition hover:bg-panel-2"
+          >
+            ×
+          </button>
+        </div>
+        <p className="mb-4 text-sm text-muted">
+          Tonight&apos;s Edition is a daily quiz show whose questions are written
+          live by AI — grounded in a 538,000-clue Jeopardy! archive and today&apos;s
+          headlines.
+        </p>
+        <div className="space-y-3">
+          {rows.map((r) => (
+            <div
+              key={r.title}
+              className="flex gap-3 rounded-2xl border border-edge bg-panel-2 p-3.5"
+            >
+              <span className="text-xl">{r.icon}</span>
+              <div>
+                <div className="display text-sm text-slate-100">{r.title}</div>
+                <p className="mt-0.5 text-sm leading-relaxed text-muted">
+                  {r.body}
+                </p>
+              </div>
+            </div>
+          ))}
+        </div>
+        <button
+          onClick={onClose}
+          className="display mt-5 w-full rounded-xl bg-gold py-3 font-bold text-ink transition hover:brightness-110"
+        >
+          Got it — let&apos;s play
+        </button>
+      </div>
     </div>
   );
 }

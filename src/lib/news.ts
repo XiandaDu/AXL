@@ -74,11 +74,9 @@ export async function generateLiveCategory(): Promise<Category | null> {
             headlines.join("\n- ") +
             "\n\nWrite the category now.",
         },
-        { role: "assistant", content: "{" },
       ],
     });
-    const text =
-      "{" + msg.content.map((b) => ("text" in b ? b.text : "")).join("");
+    const text = msg.content.map((b) => ("text" in b ? b.text : "")).join("");
     const parsed = extractJson<{
       category: string;
       source?: string;
@@ -90,20 +88,20 @@ export async function generateLiveCategory(): Promise<Category | null> {
       }[];
     }>(text);
     const clues = (parsed.clues || []).filter(
-      (c) => c.question && Array.isArray(c.options) && c.options.length === 4
+      (c) => c.question && Array.isArray(c.options) && c.options.length >= 4
     );
     if (clues.length < 5) return null;
     return {
-      category: parsed.category?.toUpperCase() || "IN THE NEWS",
+      category: String(parsed.category || "IN THE NEWS").toUpperCase(),
       difficulty: "hard",
       live: true,
       source: parsed.source || "Today's headlines",
       clues: clues.slice(0, 5).map((c, i) => ({
         value: BOARD_VALUES[i],
-        question: c.question,
-        options: c.options.slice(0, 4),
+        question: String(c.question),
+        options: c.options.slice(0, 4).map((o) => String(o)),
         answer: clampIdx(c.answer),
-        explainer: c.explainer,
+        explainer: c.explainer ? String(c.explainer) : undefined,
       })),
     };
   } catch (e) {
@@ -112,8 +110,9 @@ export async function generateLiveCategory(): Promise<Category | null> {
   }
 }
 
-function clampIdx(n: number): number {
-  return Number.isInteger(n) && n >= 0 && n <= 3 ? n : 0;
+function clampIdx(n: unknown): number {
+  const i = Math.trunc(Number(n));
+  return Number.isFinite(i) && i >= 0 && i <= 3 ? i : 0;
 }
 function pad(n: number) {
   return String(n).padStart(2, "0");
