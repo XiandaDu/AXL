@@ -1,93 +1,134 @@
-# Tonight's Edition — the daily, self-writing Jeopardy!
+# Tonight's Edition — a daily, AI-written quiz show
 
-A web Jeopardy! board where **every game is freshly generated and never repeats.**
-Most categories are remixed from a real **538,000-clue** Jeopardy! archive; one
-category — **TODAY'S HEADLINES** — is written live by an LLM from the day's actual
-news. Every free-text answer is graded by an AI host that rules like a real judge.
+A web game show in the spirit of **Jeopardy!**, reimagined so the questions are
+written **live by an LLM** instead of pulled from a fixed script. Every visitor
+gets a 6-category × 5-question board of clear, multiple-choice questions. The
+board changes **every day**, can be **steered toward any theme** you type, and
+**adapts in difficulty** to how well you're playing.
 
-> Built for the AXL take-home. Concept, data pipeline, and architecture notes are in
-> [`WRITEUP.md`](./WRITEUP.md).
+> **Live demo:** https://tonights-edition.vercel.app  <!-- replace with your deployed URL -->
 
-## Why this is more than a trivia clone
+![board](public/screenshot.png) <!-- optional -->
 
-| Requirement | How it's met |
-| --- | --- |
-| **Meaningful AI** | The LLM *is the referee* (semantic, lenient free-text grading) **and** *the writer* (it composes the live news category). Neither is doable with string matching. |
-| **Data at scale** | A 538k-clue corpus is distilled into 600 intact, hand-quality categories with authentic $200–$1000 value ladders. |
-| **Dynamic behavior** | The headlines category is regenerated daily from live sources; the board mix also adapts to the player's running accuracy. |
-| **Design / product** | Authentic board feel, keyboard-first play, Daily Double wagering, sound, a shareable daily score. |
+---
+
+## Highlights
+
+- **AI is the content engine.** Real Jeopardy! category *topics* are handed to
+  Claude, which writes 5 fresh, plain-English multiple-choice questions per
+  category (easy → hard), each with four options and a one-line explainer.
+- **Steer the whole board.** Type a theme (e.g. `space`, `90s movies`,
+  `world history`) → the model expands it into 6 sub-topics and writes a brand
+  new board about it.
+- **Regenerate one column.** The `↻` on any category header rewrites just that
+  column on a topic you choose.
+- **Today's headlines round.** A `LIVE` category is generated each day from real
+  current events (Hacker News + Wikipedia), so the game is never the same twice.
+- **Grounded in data at scale.** Classic categories are distilled from a
+  **538,000-clue** Jeopardy! archive into a ~600-topic pool.
+- **Adapts to you.** Lifetime accuracy (saved locally) nudges future boards
+  harder or easier. Plus Daily Double wagering, score, and 🔥 streaks.
+- **Always playable.** With no API key, a curated offline question set is served
+  so the board is never empty.
+
+---
 
 ## Quick start
 
 ```bash
+cd tonights-edition
 npm install
-cp .env.example .env.local       # then paste your key (optional, see below)
-npm run dev                      # http://localhost:3000
+
+# Optional but recommended — enables AI question writing + the headlines round.
+# Without it, the app serves a curated offline question set.
+cp .env.example .env.local
+#   then edit .env.local:  ANTHROPIC_API_KEY=sk-ant-...
+
+npm run dev
+# open http://localhost:3000
 ```
 
-### API key (optional but recommended)
-
-The game is **fully playable without a key** — it falls back to local string-based
-grading and ships 6 archive categories. Add an Anthropic key to unlock the two AI
-features (LLM judge + live headlines category):
-
-```
-# .env.local
-ANTHROPIC_API_KEY=sk-ant-...
-```
-
-Get one at <https://console.anthropic.com>. Cost is a few cents per game
-(Haiku for judging, Sonnet for the once-a-day category) — well within the $50 cap.
-
-## Rebuilding the clue pool
-
-`src/data/clues.json` (the curated 600 categories) is committed, so you don't need
-to. To regenerate from the source corpus:
+Production build:
 
 ```bash
-curl -sL https://raw.githubusercontent.com/jwolle1/jeopardy_clue_dataset/master/combined_season1-41.tsv \
-  | node scripts/build-clues.mjs
+npm run build
+npm start
 ```
 
-The script streams the 77 MB TSV, keeps only intact 5-clue categories with clean
-value ladders, strips media-dependent clues, dedupes, and samples 600 diverse
-categories. The raw file is never committed.
+### Environment
 
-## Architecture
+| Variable | Required | Purpose |
+| --- | --- | --- |
+| `ANTHROPIC_API_KEY` | optional | Enables live AI question generation and the daily headlines category. Omit to run on the offline fallback set. |
+
+---
+
+## How it works
 
 ```
-src/
-  data/clues.json            # 600 curated categories (built from 538k corpus)
-  lib/
-    board.ts                 # deterministic, date+skill-seeded board assembly
-    news.ts                  # fetch headlines (HN + Wikipedia) -> LLM category
-    anthropic.ts             # Claude client, model choices, JSON extraction
-    sound.ts                 # Web Audio cues (no assets)
-    types.ts
-  app/
-    api/board/route.ts       # GET today's board (live category cached per day)
-    api/judge/route.ts       # POST a free-text answer -> {correct, reason, quip}
-    page.tsx                 # the board, clue modal, wager, end screen
-scripts/build-clues.mjs      # corpus -> curated pool
+538k-clue Jeopardy! archive ──(build-clues.mjs, offline)──▶ ~600-topic pool (clues.json)
+                                                                  │
+HN + Wikipedia headlines ──▶ Claude (headlines category) ──┐      │
+                                                           ▼      ▼
+                                       /api/board ── assembleBoard() ──▶ daily / themed board
+                                                           ▲
+player theme / single-column request ──▶ /api/category ────┘   (Claude writes the questions)
 ```
 
-- **Framework:** Next.js 16 (App Router) + React 19, Tailwind v4.
-- **AI:** Anthropic Claude — `claude-haiku-4-5` (judge), `claude-sonnet-4-6` (writer),
-  with prompt caching on the judge system prompt.
-- **Data sources:** [538k Jeopardy! clue dataset](https://github.com/jwolle1/jeopardy_clue_dataset);
-  live news from the Hacker News (Algolia) and Wikipedia featured-feed APIs (both free, no auth).
+1. **Data prep (offline).** `scripts/build-clues.mjs` streams the 538k-clue
+   corpus, keeps only intact, text-playable 5-clue categories with a clean
+   `$200–$1000` ladder, dedupes by name, and writes a diverse ~600-topic pool to
+   `src/data/clues.json`. The large source dataset never ships with the repo.
+2. **Board assembly.** `/api/board` samples real topics from the pool, asks
+   Claude to rewrite each as clear multiple-choice questions, prepends the daily
+   **headlines** category, and `assembleBoard()` lays out a difficulty-mixed
+   board (seeded so a given day/skill level is reproducible).
+3. **Theme & regenerate.** Typing a theme requests a themed pool; the `↻` button
+   calls `/api/category` to rewrite a single column on demand.
+4. **Play.** Answers are multiple choice (tap or press `1–4`), scored instantly
+   with money values, a Daily Double, and streaks. Accuracy is stored in
+   `localStorage` and feeds the adaptive difficulty.
 
-## Deploy (Vercel)
+---
 
-```bash
-npm i -g vercel
-vercel            # link + deploy a preview
-vercel --prod     # production URL
+## Project structure
+
+```
+tonights-edition/
+├─ scripts/build-clues.mjs        # offline: 538k clues → ~600-topic pool
+├─ src/
+│  ├─ app/
+│  │  ├─ page.tsx                 # the entire game UI (board, modals, help)
+│  │  ├─ globals.css              # theme + animations
+│  │  └─ api/
+│  │     ├─ board/route.ts        # daily / themed board
+│  │     └─ category/route.ts     # regenerate one column
+│  ├─ lib/
+│  │  ├─ anthropic.ts             # SDK client + balanced-JSON extractor
+│  │  ├─ generate.ts              # AI question authoring + theme decomposition
+│  │  ├─ news.ts                  # headlines → AI "LIVE" category
+│  │  ├─ board.ts                 # seeded, adaptive board assembly
+│  │  ├─ sound.ts                 # Web Audio cues (no assets)
+│  │  └─ types.ts
+│  └─ data/
+│     ├─ clues.json               # distilled ~600-topic pool (from the archive)
+│     └─ fallback.json            # curated offline question set (no-key mode)
+└─ method.txt                     # one-page approach write-up
 ```
 
-Set `ANTHROPIC_API_KEY` in the Vercel project's Environment Variables. No other
-config needed; the routes run on the Node.js serverless runtime.
+---
 
-> Note: the live-category cache is in-memory per warm instance. For multi-region
-> consistency in production, back it with a shared KV store (e.g. Vercel KV /
-> Upstash) — see `src/app/api/board/route.ts`.
+## Tech
+
+Next.js 16 (App Router) · React 19 · TypeScript · Tailwind CSS v4 ·
+`@anthropic-ai/sdk` (Claude `sonnet-4-6`) · deployed on Vercel.
+
+See **[`method.txt`](method.txt)** for the one-page approach write-up.
+
+---
+
+## Deploy
+
+Push to GitHub and import the `tonights-edition/` directory into
+[Vercel](https://vercel.com/new). Set the `ANTHROPIC_API_KEY` environment
+variable in the project settings, then deploy.

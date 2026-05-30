@@ -1,0 +1,68 @@
+TONIGHT'S EDITION — A Daily, AI-Written Quiz Show
+Approach & Method (one page)
+
+WHAT IT IS
+Tonight's Edition is a web game show modeled on Jeopardy!, reimagined so that
+the questions themselves are written by an LLM rather than pulled from a fixed
+script. Every visitor gets a 6-category x 5-question board of plain-English
+multiple-choice questions. The board changes daily, can be steered toward any
+theme the player types, and adapts in difficulty to how well the player is
+doing. The game is fully playable with or without an API key.
+
+HOW AI IS USED (meaningfully, not as a bolt-on)
+The LLM is the content engine — without it there is no game, only a small
+offline fallback. Three distinct uses:
+1. Question authoring. Real Jeopardy! category TOPICS are handed to Claude
+   (claude-sonnet-4-6), which writes 5 fresh, clear multiple-choice questions
+   per category — easy to hard — each with four options and a one-line
+   explainer. This converts the archive's cryptic "answer-in-the-form-of-a-
+   question" style into something anyone can instantly understand.
+2. Theme decomposition. When a player types a theme (e.g. "space"), Claude
+   first expands it into six distinct sub-topics (solar system, astronauts,
+   rockets, ...), then writes a full category for each — turning one word into
+   a coherent, varied board.
+3. Today's headlines round. A "LIVE" category is generated each day from real
+   current events, so the board is genuinely dynamic and never the same twice.
+
+HOW DATA IS USED (at scale)
+The classic categories are grounded in a 538,000-clue Jeopardy! archive. A
+build-time script (scripts/build-clues.mjs) streams that corpus, keeps only
+intact, text-playable 5-clue categories with a clean value ladder, dedupes by
+category name, and distills it to a diverse pool of ~600 real category topics
+(src/data/clues.json). At runtime the app samples from this pool for genuine
+subject-matter grounding, rather than asking the model to invent topics from
+nothing. For the LIVE round, two free, no-auth feeds — Hacker News front page
+and Wikipedia's "In the news" / most-read — supply the day's real headlines as
+source material for the model.
+
+DYNAMIC / ADAPTIVE BEHAVIOR
+- Daily: a date-seeded pool plus a fresh headlines category means the board
+  differs every day.
+- Per-player: lifetime accuracy is stored in localStorage and feeds a "skill
+  level" that biases the category mix harder or easier (a deterministic,
+  seeded assembler keeps a given day/level reproducible).
+- On-demand: players can regenerate any single column, or steer the entire
+  board to a topic, with the LLM producing new content live.
+
+DESIGN & PRODUCT DECISIONS
+- Multiple choice over free text: removes the two friction points of classic
+  Jeopardy! (cryptic phrasing, typed answers), making the game approachable
+  for a general audience while keeping the board, money values, Daily Double,
+  wagering, and streaks that make it feel like the show.
+- Always playable: with no API key the app serves a curated offline question
+  set, so the deployment never shows an empty board.
+- Robustness: model output is defensively coerced to the expected types (every
+  field stringified; the correct-answer index is parsed and clamped to 0-3),
+  and a balanced-JSON extractor tolerates extra prose around the JSON.
+- Cost/latency: a higher-quality model writes boards; per-day and per-theme
+  pools are cached in memory; concurrent first-load requests are coalesced.
+- Lightweight, asset-free polish: Web Audio cue sounds, CSS animations, a "?"
+  help modal, keyboard 1-4 answering, and a responsive layout.
+
+ARCHITECTURE & TOOLS
+Next.js 16 (App Router) + React 19 + TypeScript, styled with Tailwind CSS v4.
+Server routes: /api/board (assemble the day's or a themed board), /api/category
+(regenerate one column on demand). LLM access via the official @anthropic-ai/sdk
+(claude-sonnet-4-6 for writing). Deployed on Vercel. The 538k-clue corpus is
+processed offline into a committed ~600-topic JSON pool so the repo stays small
+and the source dataset never needs to ship.
