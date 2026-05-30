@@ -35,26 +35,39 @@ export default function Home() {
   const [picked, setPicked] = useState<number | null>(null);
   const [wager, setWager] = useState(0);
   const [stats, setStats] = useState<Stats>({ correct: 0, total: 0 });
+  const [theme, setTheme] = useState("");
+  const [themeInput, setThemeInput] = useState("");
+  const [regenCol, setRegenCol] = useState<number | null>(null);
 
   const level = useMemo(
     () => (stats.total >= 5 ? clamp01(stats.correct / stats.total) : 0.3),
     [stats]
   );
 
-  const fetchBoard = useCallback(async (seed = "") => {
-    setPhase("loading");
-    const s = loadStats();
-    const lvl = s.total >= 5 ? clamp01(s.correct / s.total) : 0.3;
-    const r = await fetch(`/api/board?level=${lvl}&seed=${seed}`);
-    const b: Board = await r.json();
-    setBoard(b);
-    setAnswered(new Set());
-    setScore(0);
-    setStreak(0);
-    setActive(null);
-    setPicked(null);
-    setPhase("play");
-  }, []);
+  const fetchBoard = useCallback(
+    async (opts?: { theme?: string; seed?: string }) => {
+      const th = opts?.theme ?? "";
+      const seed = opts?.seed ?? "";
+      setPhase("loading");
+      setTheme(th);
+      const s = loadStats();
+      const lvl = s.total >= 5 ? clamp01(s.correct / s.total) : 0.3;
+      const r = await fetch(
+        `/api/board?level=${lvl}&seed=${encodeURIComponent(
+          seed
+        )}&theme=${encodeURIComponent(th)}`
+      );
+      const b: Board = await r.json();
+      setBoard(b);
+      setAnswered(new Set());
+      setScore(0);
+      setStreak(0);
+      setActive(null);
+      setPicked(null);
+      setPhase("play");
+    },
+    []
+  );
 
   useEffect(() => {
     setStats(loadStats());
@@ -62,6 +75,58 @@ export default function Home() {
   useEffect(() => {
     fetchBoard();
   }, [fetchBoard]);
+
+  const newSeed = () =>
+    typeof window !== "undefined" ? String(Date.now() % 1_000_000) : "1";
+
+  const applyTheme = () => {
+    if (phase === "loading") return;
+    fetchBoard({ theme: themeInput.trim() });
+  };
+  const clearTheme = () => {
+    setThemeInput("");
+    fetchBoard({ theme: "" });
+  };
+  const restart = () => {
+    if (phase === "loading") return;
+    fetchBoard({ theme, seed: newSeed() });
+  };
+
+  const regenColumn = async (c: number) => {
+    if (!board || regenCol !== null || phase === "loading") return;
+    const cat = board.categories[c];
+    const suggestion = theme || cat.category;
+    const topic = window.prompt(
+      "Generate a new column about… (type any topic or direction)",
+      suggestion
+    );
+    if (!topic || !topic.trim()) return;
+    setRegenCol(c);
+    try {
+      const r = await fetch("/api/category", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ topic: topic.trim(), difficulty: cat.difficulty }),
+      });
+      if (!r.ok) throw new Error("regen failed");
+      const newCat: Category = await r.json();
+      setBoard((prev) => {
+        if (!prev) return prev;
+        const cats = prev.categories.slice();
+        cats[c] = newCat;
+        return { ...prev, categories: cats };
+      });
+      setAnswered((prev) => {
+        const next = new Set(prev);
+        for (let rr = 0; rr < 5; rr++) next.delete(key(c, rr));
+        return next;
+      });
+    } catch {
+      alert("Couldn't generate that column — please try again.");
+    } finally {
+      setRegenCol(null);
+    }
+  };
 
   const isDD = (c: number, r: number) =>
     board?.dailyDouble[0] === c && board?.dailyDouble[1] === r;
@@ -116,19 +181,35 @@ export default function Home() {
     <main className="mx-auto max-w-6xl px-3 py-5 sm:px-6 sm:py-7">
       <Header score={score} level={level} streak={streak} board={board} />
 
-      {phase === "loading" && <Loading />}
+      {board && (
+        <Toolbar
+          themeInput={themeInput}
+          setThemeInput={setThemeInput}
+          onApply={applyTheme}
+          onClear={clearTheme}
+          onRestart={restart}
+          theme={theme}
+          busy={phase === "loading"}
+        />
+      )}
+
+      {phase === "loading" && <Loading themed={!!theme} />}
 
       {board && phase !== "loading" && !done && (
-        <BoardGrid board={board} answered={answered} onPick={openClue} />
+        <BoardGrid
+          board={board}
+          answered={answered}
+          onPick={openClue}
+          onRegen={regenColumn}
+          regenCol={regenCol}
+        />
       )}
 
       {board && done && (
         <GameOver
           score={score}
           stats={stats}
-          onReplay={() =>
-            fetchBoard(String((answered.size * 2654435761) % 1000000))
-          }
+          onReplay={() => fetchBoard({ theme, seed: newSeed() })}
         />
       )}
 
@@ -156,7 +237,8 @@ export default function Home() {
         <b className="text-slate-300">538,000-clue</b> Jeopardy! archive and
         rewritten in plain English by AI · the{" "}
         <span className="gold-text font-semibold">LIVE</span> category is written
-        from today&apos;s headlines · difficulty adapts to how you play.
+        from today&apos;s headlines · steer any column or the whole board with a
+        theme · difficulty adapts to how you play.
       </footer>
     </main>
   );
@@ -176,14 +258,14 @@ function Header({
   board: Board | null;
 }) {
   return (
-    <header className="mb-5 flex flex-wrap items-center justify-between gap-3">
+    <header className="mb-4 flex flex-wrap items-center justify-between gap-3">
       <div>
         <h1 className="display gold-text text-3xl leading-none sm:text-5xl">
           TONIGHT&apos;S EDITION
         </h1>
         <p className="mt-2 text-sm text-muted">
           The daily AI quiz show.{" "}
-          {board && !board.headlinesOk && (
+          {board && !board.headlinesOk && !board.theme && (
             <span className="text-amber-400">
               Add an API key to unlock today&apos;s headlines round.
             </span>
@@ -237,16 +319,79 @@ function Pill({
   );
 }
 
+/* ---------------------------------------------------------------- toolbar */
+
+function Toolbar({
+  themeInput,
+  setThemeInput,
+  onApply,
+  onClear,
+  onRestart,
+  theme,
+  busy,
+}: {
+  themeInput: string;
+  setThemeInput: (s: string) => void;
+  onApply: () => void;
+  onClear: () => void;
+  onRestart: () => void;
+  theme: string;
+  busy: boolean;
+}) {
+  return (
+    <div className="glass card-shadow mb-4 flex flex-wrap items-center gap-2 rounded-2xl p-2.5">
+      <input
+        value={themeInput}
+        onChange={(e) => setThemeInput(e.target.value)}
+        onKeyDown={(e) => e.key === "Enter" && !busy && onApply()}
+        placeholder="Steer the whole board — e.g. space, 90s movies, world history…"
+        className="min-w-[12rem] flex-1 rounded-xl border border-edge bg-panel-2 px-4 py-2.5 text-sm text-slate-100 outline-none placeholder:text-muted focus:border-gold/60"
+      />
+      <button
+        onClick={onApply}
+        disabled={busy}
+        className="display rounded-xl bg-gold px-5 py-2.5 text-sm font-bold text-ink transition hover:brightness-110 disabled:opacity-50"
+      >
+        {busy ? "Writing…" : "Generate"}
+      </button>
+      <button
+        onClick={onRestart}
+        disabled={busy}
+        title="Restart with a fresh board"
+        className="display rounded-xl border border-edge bg-panel-2 px-4 py-2.5 text-sm text-slate-200 transition hover:border-gold/60 disabled:opacity-50"
+      >
+        ↻ Restart
+      </button>
+      {theme && (
+        <span className="flex items-center gap-2 rounded-full bg-accent/20 px-3 py-1.5 text-xs text-accent-2">
+          Theme: <b className="text-slate-100">{theme}</b>
+          <button
+            onClick={onClear}
+            title="Clear theme"
+            className="text-base leading-none hover:text-white"
+          >
+            ×
+          </button>
+        </span>
+      )}
+    </div>
+  );
+}
+
 /* ------------------------------------------------------------------ board */
 
 function BoardGrid({
   board,
   answered,
   onPick,
+  onRegen,
+  regenCol,
 }: {
   board: Board;
   answered: Set<string>;
   onPick: (c: number, r: number) => void;
+  onRegen: (c: number) => void;
+  regenCol: number | null;
 }) {
   return (
     <div
@@ -258,9 +403,21 @@ function BoardGrid({
       {board.categories.map((cat, c) => (
         <div
           key={c}
-          className="glass card-shadow flex min-h-[60px] items-center justify-center rounded-xl px-1.5 py-2 text-center sm:min-h-[76px]"
+          className="glass card-shadow relative flex min-h-[60px] items-center justify-center rounded-xl px-1.5 py-2 text-center sm:min-h-[76px]"
         >
-          <span className="display text-[11px] uppercase leading-tight text-slate-100 sm:text-sm">
+          <button
+            onClick={() => onRegen(c)}
+            disabled={regenCol !== null}
+            title="Regenerate this column with AI"
+            className="absolute right-1 top-1 flex h-5 w-5 items-center justify-center rounded-md text-[11px] text-muted transition hover:bg-edge hover:text-gold disabled:opacity-40"
+          >
+            {regenCol === c ? (
+              <span className="animate-pulse text-gold">●</span>
+            ) : (
+              "↻"
+            )}
+          </button>
+          <span className="display px-2 text-[11px] uppercase leading-tight text-slate-100 sm:text-sm">
             {cat.live && (
               <span className="mb-1 block text-[9px] font-bold tracking-widest text-accent-2">
                 ● LIVE
@@ -278,12 +435,12 @@ function BoardGrid({
             <button
               key={key(c, r)}
               onClick={() => onPick(c, r)}
-              disabled={used}
+              disabled={used || regenCol === c}
               className={`group min-h-[60px] rounded-xl border transition-all duration-150 sm:min-h-[84px] ${
                 used
                   ? "cursor-default border-transparent bg-panel/40"
                   : "card-shadow border-edge bg-gradient-to-b from-panel-2 to-panel hover:border-gold/60 hover:from-edge active:scale-[0.97]"
-              }`}
+              } ${regenCol === c ? "opacity-50" : ""}`}
             >
               {used ? (
                 <span className="text-xl text-edge">✓</span>
@@ -352,7 +509,7 @@ function ClueModal({
             <span className="text-gold">{fmt(clue.value)}</span>
             {isDD && <span className="ml-2 text-accent-2">★ Daily Double</span>}
           </span>
-          {category.live && category.source && (
+          {category.source && (
             <span className="text-accent-2">{category.source}</span>
           )}
         </div>
@@ -377,8 +534,7 @@ function ClueModal({
                 let cls =
                   "border-edge bg-panel-2 hover:border-gold/70 hover:bg-edge";
                 if (revealed) {
-                  if (isAnswer)
-                    cls = "border-good bg-good/15 text-white";
+                  if (isAnswer) cls = "border-good bg-good/15 text-white";
                   else if (isPick)
                     cls = "border-bad bg-bad/15 text-white animate-shake";
                   else cls = "border-transparent bg-panel/50 opacity-60";
@@ -570,7 +726,7 @@ function GameOver({
   );
 }
 
-function Loading() {
+function Loading({ themed }: { themed: boolean }) {
   return (
     <div className="flex flex-col items-center justify-center py-24 text-center">
       <div className="mb-5 flex gap-1.5">
@@ -586,7 +742,9 @@ function Loading() {
         Writing tonight&apos;s board…
       </div>
       <p className="mt-2 text-sm text-muted">
-        Sampling the archive and reading today&apos;s headlines.
+        {themed
+          ? "The AI is composing fresh categories on your theme."
+          : "Sampling the archive and reading today's headlines."}
       </p>
     </div>
   );

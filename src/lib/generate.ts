@@ -47,12 +47,14 @@ function clampIdx(n: number): number {
   return Number.isInteger(n) && n >= 0 && n <= 3 ? n : 0;
 }
 
-/** Ask the writer model to turn one real topic into 5 clear MC questions. */
-async function writeMcCategory(
+/** Ask the writer model to turn one topic into 5 clear MC questions. */
+export async function writeMcCategory(
   topic: string,
   difficulty: Difficulty,
-  sampleAnswers: string[]
+  sampleAnswers: string[],
+  source = "Grounded in the Jeopardy! archive"
 ): Promise<Category | null> {
+  if (!hasKey()) return null;
   const sys =
     "You write ONE multiple-choice trivia category of exactly 5 questions for a " +
     "friendly quiz show. Rules: use plain, everyday language so ANYONE instantly " +
@@ -103,7 +105,7 @@ async function writeMcCategory(
     return {
       category: (parsed.category || topic).toUpperCase(),
       difficulty,
-      source: "Grounded in the Jeopardy! archive",
+      source,
       clues: clues.slice(0, 5).map((c, i) => ({
         value: BOARD_VALUES[i],
         question: c.question,
@@ -118,6 +120,85 @@ async function writeMcCategory(
   }
 }
 
+/** Ask the model for N distinct sub-topics that all sit under one theme. */
+export async function generateSubtopics(
+  theme: string,
+  n: number
+): Promise<string[]> {
+  if (!hasKey()) return [];
+  const sys =
+    `You name distinct sub-topics for a quiz-show theme. Return ONLY a JSON ` +
+    `array of ${n} short category titles (2–4 words each), every one a ` +
+    `different angle on the theme, all well-known enough to write fair ` +
+    `general-knowledge questions about. No duplicates, no commentary.`;
+  try {
+    const msg = await getClient().messages.create({
+      model: WRITER_MODEL,
+      max_tokens: 300,
+      system: sys,
+      messages: [
+        { role: "user", content: `Theme: "${theme}". Give ${n} sub-topics.` },
+        { role: "assistant", content: "[" },
+      ],
+    });
+    const text =
+      "[" + msg.content.map((b) => ("text" in b ? b.text : "")).join("");
+    const arr = extractJson<string[]>(text);
+    return Array.isArray(arr)
+      ? arr.filter((x) => typeof x === "string" && x.trim()).slice(0, n)
+      : [];
+  } catch (e) {
+    console.error("generateSubtopics failed", e);
+    return [];
+  }
+}
+
+/**
+ * Build a pool of `count` categories that all orbit a user-supplied theme.
+ * Powers the "steer the whole board" input.
+ */
+export async function generateThemedPool(
+  theme: string,
+  count = 6
+): Promise<Category[]> {
+  if (!hasKey()) return FALLBACK;
+  const subs = await generateSubtopics(theme, count);
+  while (subs.length < count) subs.push(theme);
+
+  const cats = await Promise.all(
+    subs.map((s, i) =>
+      writeMcCategory(
+        s,
+        i % 3 === 2 ? "hard" : "standard",
+        [],
+        `AI · theme: ${theme}`
+      )
+    )
+  );
+  const ok = cats.filter((c): c is Category => !!c);
+  if (ok.length < Math.min(6, count)) {
+    for (const f of FALLBACK) {
+      if (ok.length >= 6) break;
+      if (!ok.some((c) => c.category === f.category)) ok.push(f);
+    }
+  }
+  return ok;
+}
+
+/** One on-demand category for a single board column (theme or free topic). */
+export async function generateOneCategory(
+  topic: string,
+  difficulty: Difficulty = "standard"
+): Promise<Category | null> {
+  if (!hasKey()) {
+    const hit = FALLBACK.find((f) =>
+      f.category.toLowerCase().includes(topic.toLowerCase())
+    );
+    return hit ?? FALLBACK[0] ?? null;
+  }
+  return writeMcCategory(topic, difficulty, [], `AI · ${topic}`);
+}
+
 /**
  * Build the day's pool of classic (non-headlines) categories as clear MC
  * questions. With a key: real archive topics, AI-rewritten. Without: the
@@ -127,7 +208,6 @@ export async function generateClassicPool(date: string): Promise<Category[]> {
   if (!hasKey()) return FALLBACK;
 
   const rand = mulberry32(seedFromString(`pool:${date}`));
-  // Pick a daily set of real topics from the archive, mixing difficulties.
   const hard = shuffle(ARCHIVE.filter((c) => c.difficulty === "hard"), rand);
   const standard = shuffle(
     ARCHIVE.filter((c) => c.difficulty !== "hard"),
@@ -146,8 +226,6 @@ export async function generateClassicPool(date: string): Promise<Category[]> {
   );
   const ok = generated.filter((c): c is Category => !!c);
 
-  // If the model under-delivered, top up from the offline set so we always
-  // have enough categories to assemble a full board.
   if (ok.length < 6) {
     for (const f of FALLBACK) {
       if (ok.length >= 6) break;

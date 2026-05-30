@@ -1,23 +1,25 @@
 import { NextRequest, NextResponse } from "next/server";
 import { assembleBoard } from "@/lib/board";
-import { generateClassicPool } from "@/lib/generate";
+import { generateClassicPool, generateThemedPool } from "@/lib/generate";
 import { generateLiveCategory } from "@/lib/news";
 import type { Category } from "@/lib/types";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-// Generate the day's pool (AI-written categories + the headlines category) at
-// most once per UTC day per warm instance. Production would back this with a
-// shared KV store; in-memory keeps the demo dependency-free.
+// Daily pool (AI categories + headlines) — generated at most once per UTC day
+// per warm instance. Production would back this with a shared KV store.
 let cache: { date: string; pool: Category[] } | null = null;
 let inflight: Promise<Category[]> | null = null;
+
+// Themed pools requested via the "steer the board" input, keyed by theme.
+const themed = new Map<string, Promise<Category[]>>();
 
 function today(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
-async function buildPool(date: string): Promise<Category[]> {
+async function buildDailyPool(date: string): Promise<Category[]> {
   const [classics, live] = await Promise.all([
     generateClassicPool(date),
     generateLiveCategory(),
@@ -28,23 +30,39 @@ async function buildPool(date: string): Promise<Category[]> {
 export async function GET(req: NextRequest) {
   const date = today();
   const level = clamp01(Number(req.nextUrl.searchParams.get("level") ?? "0.3"));
+  const theme = (req.nextUrl.searchParams.get("theme") ?? "").trim().slice(0, 80);
+  const seed = req.nextUrl.searchParams.get("seed") ?? "";
 
-  if (!cache || cache.date !== date) {
-    // Coalesce concurrent first-load requests onto a single generation.
-    if (!inflight) inflight = buildPool(date);
-    try {
-      const pool = await inflight;
-      cache = { date, pool };
-    } finally {
-      inflight = null;
+  let pool: Category[];
+  if (theme) {
+    const k = theme.toLowerCase();
+    if (!themed.has(k)) {
+      if (themed.size > 24) themed.clear(); // bounded for the demo
+      themed.set(k, generateThemedPool(theme));
     }
+    try {
+      pool = await themed.get(k)!;
+    } catch {
+      themed.delete(k);
+      pool = await generateThemedPool(theme);
+    }
+  } else {
+    if (!cache || cache.date !== date) {
+      if (!inflight) inflight = buildDailyPool(date);
+      try {
+        cache = { date, pool: await inflight };
+      } finally {
+        inflight = null;
+      }
+    }
+    pool = cache.pool;
   }
 
-  const seed = req.nextUrl.searchParams.get("seed") ?? "";
-  const board = assembleBoard(date, level, cache.pool, seed);
-  return NextResponse.json(board, {
-    headers: { "Cache-Control": "no-store" },
-  });
+  const board = assembleBoard(date, level, pool, seed);
+  return NextResponse.json(
+    { ...board, theme: theme || undefined },
+    { headers: { "Cache-Control": "no-store" } }
+  );
 }
 
 function clamp01(n: number): number {

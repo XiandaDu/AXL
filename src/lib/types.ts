@@ -32,4 +32,6 @@ export interface Board {
   liveOk: boolean;
   /** True when the AI headlines category is present. */
   headlinesOk: boolean;
+  /** User-supplied theme the board was steered toward, if any. */
+  theme?: string;
 }
