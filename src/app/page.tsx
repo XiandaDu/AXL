@@ -1,12 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { Board, Judgement } from "@/lib/types";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import type { Board, Category, Clue } from "@/lib/types";
 import { ding, buzz } from "@/lib/sound";
 
-type Phase = "loading" | "play" | "wager" | "ask" | "judging" | "result";
+type Phase = "loading" | "play" | "wager" | "ask" | "result";
 const fmt = (n: number) => (n < 0 ? `-$${Math.abs(n)}` : `$${n}`);
 const key = (c: number, r: number) => `${c}-${r}`;
+const LETTERS = ["A", "B", "C", "D"];
 
 interface Stats {
   correct: number;
@@ -20,18 +21,20 @@ function loadStats(): Stats {
     return { correct: 0, total: 0 };
   }
 }
+function clamp01(n: number) {
+  return Math.max(0, Math.min(1, n));
+}
 
 export default function Home() {
   const [board, setBoard] = useState<Board | null>(null);
   const [phase, setPhase] = useState<Phase>("loading");
   const [score, setScore] = useState(0);
+  const [streak, setStreak] = useState(0);
   const [answered, setAnswered] = useState<Set<string>>(new Set());
   const [active, setActive] = useState<{ c: number; r: number } | null>(null);
-  const [response, setResponse] = useState("");
+  const [picked, setPicked] = useState<number | null>(null);
   const [wager, setWager] = useState(0);
-  const [judgement, setJudgement] = useState<Judgement | null>(null);
   const [stats, setStats] = useState<Stats>({ correct: 0, total: 0 });
-  const inputRef = useRef<HTMLInputElement>(null);
 
   const level = useMemo(
     () => (stats.total >= 5 ? clamp01(stats.correct / stats.total) : 0.3),
@@ -47,9 +50,9 @@ export default function Home() {
     setBoard(b);
     setAnswered(new Set());
     setScore(0);
+    setStreak(0);
     setActive(null);
-    setJudgement(null);
-    setResponse("");
+    setPicked(null);
     setPhase("play");
   }, []);
 
@@ -59,9 +62,6 @@ export default function Home() {
   useEffect(() => {
     fetchBoard();
   }, [fetchBoard]);
-  useEffect(() => {
-    if (phase === "ask" || phase === "wager") inputRef.current?.focus();
-  }, [phase]);
 
   const isDD = (c: number, r: number) =>
     board?.dailyDouble[0] === c && board?.dailyDouble[1] === r;
@@ -69,8 +69,7 @@ export default function Home() {
   const openClue = (c: number, r: number) => {
     if (phase !== "play" || answered.has(key(c, r))) return;
     setActive({ c, r });
-    setResponse("");
-    setJudgement(null);
+    setPicked(null);
     if (isDD(c, r)) {
       setWager(Math.max(score, 1000));
       setPhase("wager");
@@ -79,54 +78,34 @@ export default function Home() {
     }
   };
 
-  const clue =
+  const clue: Clue | null =
     active && board ? board.categories[active.c].clues[active.r] : null;
   const stake = active && isDD(active.c, active.r) ? wager : clue?.value ?? 0;
 
-  const submit = async () => {
-    if (!clue || !active) return;
-    setPhase("judging");
-    let j: Judgement;
-    try {
-      const r = await fetch("/api/judge", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          clue: clue.clue,
-          correctAnswer: clue.answer,
-          response,
-        }),
-      });
-      j = await r.json();
-    } catch {
-      j = {
-        correct: false,
-        confidence: 0,
-        reason: `The answer was "${clue.answer}".`,
-        quip: "Connection trouble — we'll call that a no.",
-      };
-    }
-    setJudgement(j);
-    const delta = j.correct ? stake : -stake;
-    setScore((s) => s + delta);
-    if (j.correct) ding();
+  const choose = (idx: number) => {
+    if (!clue || !active || phase !== "ask") return;
+    const correct = idx === clue.answer;
+    setPicked(idx);
+    setPhase("result");
+    setScore((s) => s + (correct ? stake : -stake));
+    setStreak((k) => (correct ? k + 1 : 0));
+    if (correct) ding();
     else buzz();
-    const next = new Set(answered);
-    next.add(key(active.c, active.r));
-    setAnswered(next);
+
+    setAnswered((prev) => new Set(prev).add(key(active.c, active.r)));
     const ns = {
-      correct: stats.correct + (j.correct ? 1 : 0),
+      correct: stats.correct + (correct ? 1 : 0),
       total: stats.total + 1,
     };
     setStats(ns);
     try {
       localStorage.setItem("te-stats", JSON.stringify(ns));
     } catch {}
-    setPhase("result");
   };
 
   const close = () => {
     setActive(null);
+    setPicked(null);
     setPhase("play");
   };
 
@@ -134,100 +113,95 @@ export default function Home() {
   const done = answered.size >= totalTiles && totalTiles > 0;
 
   return (
-    <main className="mx-auto max-w-6xl px-3 py-5 sm:px-6">
-      <Header score={score} level={level} liveOk={board?.liveOk} />
+    <main className="mx-auto max-w-6xl px-3 py-5 sm:px-6 sm:py-7">
+      <Header score={score} level={level} streak={streak} board={board} />
 
       {phase === "loading" && <Loading />}
 
-      {board && phase !== "loading" && (
-        <>
-          {done ? (
-            <GameOver
-              score={score}
-              stats={stats}
-              onReplay={() =>
-                fetchBoard(String((answered.size * 2654435761) % 1000000))
-              }
-            />
-          ) : (
-            <BoardGrid
-              board={board}
-              answered={answered}
-              onPick={openClue}
-            />
-          )}
-        </>
+      {board && phase !== "loading" && !done && (
+        <BoardGrid board={board} answered={answered} onPick={openClue} />
       )}
 
-      {active && clue && phase !== "play" && phase !== "loading" && (
-        <ClueModal
-          category={board!.categories[active.c]}
-          clue={clue}
-          phase={phase}
-          response={response}
-          setResponse={setResponse}
-          wager={wager}
-          setWager={setWager}
-          maxWager={Math.max(score, 1000)}
-          stake={stake}
-          isDD={isDD(active.c, active.r)}
-          judgement={judgement}
-          inputRef={inputRef}
-          onWagerLock={() => setPhase("ask")}
-          onSubmit={submit}
-          onClose={close}
+      {board && done && (
+        <GameOver
+          score={score}
+          stats={stats}
+          onReplay={() =>
+            fetchBoard(String((answered.size * 2654435761) % 1000000))
+          }
         />
       )}
 
-      <footer className="mt-10 text-center text-xs text-slate-500">
-        Classic categories distilled from a <b>538,000-clue</b> Jeopardy! archive
-        · the <span className="text-jeop-gold">LIVE</span> category is written by
-        AI from today&apos;s headlines · answers judged by an AI host.
+      {active &&
+        clue &&
+        (phase === "ask" || phase === "wager" || phase === "result") && (
+          <ClueModal
+            category={board!.categories[active.c]}
+            clue={clue}
+            phase={phase}
+            picked={picked}
+            wager={wager}
+            setWager={setWager}
+            maxWager={Math.max(score, 1000)}
+            stake={stake}
+            isDD={isDD(active.c, active.r)}
+            onWagerLock={() => setPhase("ask")}
+            onChoose={choose}
+            onClose={close}
+          />
+        )}
+
+      <footer className="mt-10 pb-6 text-center text-xs leading-relaxed text-muted">
+        A fresh board every day · classic categories grounded in a{" "}
+        <b className="text-slate-300">538,000-clue</b> Jeopardy! archive and
+        rewritten in plain English by AI · the{" "}
+        <span className="gold-text font-semibold">LIVE</span> category is written
+        from today&apos;s headlines · difficulty adapts to how you play.
       </footer>
     </main>
   );
 }
 
+/* ----------------------------------------------------------------- header */
+
 function Header({
   score,
   level,
-  liveOk,
+  streak,
+  board,
 }: {
   score: number;
   level: number;
-  liveOk?: boolean;
+  streak: number;
+  board: Board | null;
 }) {
   return (
-    <header className="mb-5 flex flex-wrap items-end justify-between gap-3">
+    <header className="mb-5 flex flex-wrap items-center justify-between gap-3">
       <div>
-        <h1 className="display text-3xl font-bold tracking-wide text-jeop-gold sm:text-5xl">
+        <h1 className="display gold-text text-3xl leading-none sm:text-5xl">
           TONIGHT&apos;S EDITION
         </h1>
-        <p className="mt-1 text-sm text-slate-400">
-          A new AI-written Jeopardy every day.{" "}
-          {liveOk === false && (
+        <p className="mt-2 text-sm text-muted">
+          The daily AI quiz show.{" "}
+          {board && !board.headlinesOk && (
             <span className="text-amber-400">
-              (Live category offline — add an API key.)
+              Add an API key to unlock today&apos;s headlines round.
             </span>
           )}
         </p>
       </div>
-      <div className="flex items-center gap-4">
-        <div className="text-right">
-          <div className="text-[10px] uppercase tracking-widest text-slate-500">
-            Mix tuned to
-          </div>
-          <div className="display text-lg text-slate-300">
-            {Math.round(level * 100)}% skill
-          </div>
-        </div>
-        <div className="rounded-lg bg-jeop-blue-deep px-4 py-2 text-right tile-shadow">
-          <div className="text-[10px] uppercase tracking-widest text-slate-400">
-            Your score
+      <div className="flex items-center gap-2.5">
+        {streak >= 2 && (
+          <Pill label="Streak" value={`🔥 ${streak}`} tone="accent" />
+        )}
+        <Pill label="Skill mix" value={`${Math.round(level * 100)}%`} />
+        <div className="glass card-shadow rounded-2xl px-4 py-2 text-right">
+          <div className="text-[10px] uppercase tracking-widest text-muted">
+            Score
           </div>
           <div
-            className={`display text-2xl font-bold ${
-              score < 0 ? "text-red-400" : "text-white"
+            className={`display text-2xl ${
+              score < 0 ? "text-bad" : "gold-text"
             }`}
           >
             {fmt(score)}
@@ -237,6 +211,33 @@ function Header({
     </header>
   );
 }
+
+function Pill({
+  label,
+  value,
+  tone,
+}: {
+  label: string;
+  value: string;
+  tone?: "accent";
+}) {
+  return (
+    <div className="glass card-shadow hidden rounded-2xl px-3.5 py-2 text-right sm:block">
+      <div className="text-[10px] uppercase tracking-widest text-muted">
+        {label}
+      </div>
+      <div
+        className={`display text-lg ${
+          tone === "accent" ? "text-accent-2" : "text-slate-200"
+        }`}
+      >
+        {value}
+      </div>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ board */
 
 function BoardGrid({
   board,
@@ -249,7 +250,7 @@ function BoardGrid({
 }) {
   return (
     <div
-      className="grid gap-1.5 sm:gap-2"
+      className="grid gap-1.5 sm:gap-2.5"
       style={{
         gridTemplateColumns: `repeat(${board.categories.length}, minmax(0,1fr))`,
       }}
@@ -257,11 +258,11 @@ function BoardGrid({
       {board.categories.map((cat, c) => (
         <div
           key={c}
-          className="flex min-h-[58px] items-center justify-center rounded-md bg-jeop-blue px-1 py-2 text-center tile-shadow sm:min-h-[72px]"
+          className="glass card-shadow flex min-h-[60px] items-center justify-center rounded-xl px-1.5 py-2 text-center sm:min-h-[76px]"
         >
-          <span className="display text-[11px] font-semibold uppercase leading-tight text-white sm:text-sm">
+          <span className="display text-[11px] uppercase leading-tight text-slate-100 sm:text-sm">
             {cat.live && (
-              <span className="mb-0.5 block text-[9px] font-bold tracking-widest text-jeop-gold">
+              <span className="mb-1 block text-[9px] font-bold tracking-widest text-accent-2">
                 ● LIVE
               </span>
             )}
@@ -278,14 +279,16 @@ function BoardGrid({
               key={key(c, r)}
               onClick={() => onPick(c, r)}
               disabled={used}
-              className={`min-h-[58px] rounded-md tile-shadow transition sm:min-h-[80px] ${
+              className={`group min-h-[60px] rounded-xl border transition-all duration-150 sm:min-h-[84px] ${
                 used
-                  ? "cursor-default bg-jeop-blue-deep/40"
-                  : "bg-jeop-blue-deep hover:bg-jeop-blue active:scale-[0.98]"
+                  ? "cursor-default border-transparent bg-panel/40"
+                  : "card-shadow border-edge bg-gradient-to-b from-panel-2 to-panel hover:border-gold/60 hover:from-edge active:scale-[0.97]"
               }`}
             >
-              {!used && (
-                <span className="display text-xl font-bold text-jeop-value sm:text-3xl">
+              {used ? (
+                <span className="text-xl text-edge">✓</span>
+              ) : (
+                <span className="display text-xl text-gold transition-transform group-hover:scale-110 sm:text-3xl">
                   {fmt(cat.clues[r].value)}
                 </span>
               )}
@@ -297,118 +300,130 @@ function BoardGrid({
   );
 }
 
+/* ------------------------------------------------------------- clue modal */
+
 function ClueModal({
   category,
   clue,
   phase,
-  response,
-  setResponse,
+  picked,
   wager,
   setWager,
   maxWager,
   stake,
   isDD,
-  judgement,
-  inputRef,
   onWagerLock,
-  onSubmit,
+  onChoose,
   onClose,
 }: {
-  category: { category: string; live?: boolean; source?: string };
-  clue: { value: number; clue: string; answer: string };
+  category: Category;
+  clue: Clue;
   phase: Phase;
-  response: string;
-  setResponse: (s: string) => void;
+  picked: number | null;
   wager: number;
   setWager: (n: number) => void;
   maxWager: number;
   stake: number;
   isDD: boolean;
-  judgement: Judgement | null;
-  inputRef: React.RefObject<HTMLInputElement | null>;
   onWagerLock: () => void;
-  onSubmit: () => void;
+  onChoose: (idx: number) => void;
   onClose: () => void;
 }) {
+  // keyboard: 1–4 to answer
+  useEffect(() => {
+    if (phase !== "ask") return;
+    const h = (e: KeyboardEvent) => {
+      const n = Number(e.key);
+      if (n >= 1 && n <= clue.options.length) onChoose(n - 1);
+    };
+    window.addEventListener("keydown", h);
+    return () => window.removeEventListener("keydown", h);
+  }, [phase, clue.options.length, onChoose]);
+
+  const revealed = phase === "result" && picked !== null;
+  const correct = revealed && picked === clue.answer;
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
-      <div className="animate-pop w-full max-w-2xl rounded-xl bg-jeop-blue p-6 tile-shadow sm:p-10">
-        <div className="mb-4 flex items-center justify-between text-xs uppercase tracking-widest text-blue-200">
-          <span className="display">
-            {category.category} · {fmt(clue.value)}
-            {isDD && <span className="ml-2 text-jeop-gold">★ Daily Double</span>}
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-3 backdrop-blur-sm sm:p-4">
+      <div className="animate-pop glass card-shadow w-full max-w-2xl rounded-3xl p-5 sm:p-8">
+        <div className="mb-4 flex items-center justify-between gap-2 text-[11px] uppercase tracking-widest text-muted">
+          <span className="display text-slate-200">
+            {category.category} ·{" "}
+            <span className="text-gold">{fmt(clue.value)}</span>
+            {isDD && <span className="ml-2 text-accent-2">★ Daily Double</span>}
           </span>
           {category.live && category.source && (
-            <span className="text-jeop-gold">{category.source}</span>
+            <span className="text-accent-2">{category.source}</span>
           )}
         </div>
 
         {phase === "wager" ? (
-          <div className="text-center">
-            <p className="display text-2xl text-jeop-gold">Daily Double!</p>
-            <p className="mt-2 text-blue-100">
-              Wager up to <b>{fmt(maxWager)}</b> before you see the clue.
-            </p>
-            <input
-              ref={inputRef}
-              type="number"
-              min={5}
-              max={maxWager}
-              value={wager}
-              onChange={(e) =>
-                setWager(Math.min(maxWager, Math.max(5, +e.target.value)))
-              }
-              onKeyDown={(e) => e.key === "Enter" && onWagerLock()}
-              className="mt-4 w-40 rounded-md bg-white/95 px-4 py-3 text-center text-2xl font-bold text-jeop-blue-deep outline-none"
-            />
-            <div>
-              <button
-                onClick={onWagerLock}
-                className="mt-5 rounded-md bg-jeop-gold px-8 py-3 display font-bold text-jeop-blue-deep hover:brightness-110"
-              >
-                Lock it in
-              </button>
-            </div>
-          </div>
+          <Wager
+            wager={wager}
+            setWager={setWager}
+            maxWager={maxWager}
+            onLock={onWagerLock}
+          />
         ) : (
           <>
             <p className="display text-center text-xl leading-snug text-white sm:text-3xl">
-              {clue.clue}
+              {clue.question}
             </p>
 
-            {phase === "result" && judgement ? (
+            <div className="mt-6 grid gap-2.5 sm:grid-cols-2">
+              {clue.options.map((opt, i) => {
+                const isPick = picked === i;
+                const isAnswer = i === clue.answer;
+                let cls =
+                  "border-edge bg-panel-2 hover:border-gold/70 hover:bg-edge";
+                if (revealed) {
+                  if (isAnswer)
+                    cls = "border-good bg-good/15 text-white";
+                  else if (isPick)
+                    cls = "border-bad bg-bad/15 text-white animate-shake";
+                  else cls = "border-transparent bg-panel/50 opacity-60";
+                }
+                return (
+                  <button
+                    key={i}
+                    disabled={revealed}
+                    onClick={() => onChoose(i)}
+                    className={`flex items-center gap-3 rounded-2xl border px-4 py-3.5 text-left transition-all duration-150 active:scale-[0.98] ${cls}`}
+                  >
+                    <span
+                      className={`display flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-sm ${
+                        revealed && isAnswer
+                          ? "bg-good text-ink"
+                          : revealed && isPick
+                            ? "bg-bad text-ink"
+                            : "bg-edge text-slate-200"
+                      }`}
+                    >
+                      {revealed && isAnswer
+                        ? "✓"
+                        : revealed && isPick
+                          ? "✕"
+                          : LETTERS[i]}
+                    </span>
+                    <span className="text-sm text-slate-100 sm:text-base">
+                      {opt}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+
+            {revealed ? (
               <Result
-                judgement={judgement}
-                answer={clue.answer}
+                correct={correct}
                 stake={stake}
+                explainer={clue.explainer}
                 onClose={onClose}
               />
             ) : (
-              <div className="mt-7">
-                <input
-                  ref={inputRef}
-                  value={response}
-                  disabled={phase === "judging"}
-                  onChange={(e) => setResponse(e.target.value)}
-                  onKeyDown={(e) =>
-                    e.key === "Enter" && phase === "ask" && onSubmit()
-                  }
-                  placeholder="What is… ?"
-                  className="w-full rounded-md bg-white/95 px-4 py-3 text-lg text-jeop-blue-deep outline-none disabled:opacity-60"
-                />
-                <div className="mt-4 flex items-center justify-between">
-                  <span className="text-xs text-blue-200">
-                    Worth {fmt(stake)} · phrasing as a question optional
-                  </span>
-                  <button
-                    onClick={onSubmit}
-                    disabled={phase === "judging"}
-                    className="rounded-md bg-jeop-gold px-7 py-2.5 display font-bold text-jeop-blue-deep hover:brightness-110 disabled:opacity-60"
-                  >
-                    {phase === "judging" ? "Judging…" : "Answer"}
-                  </button>
-                </div>
-              </div>
+              <p className="mt-5 text-center text-xs text-muted">
+                Worth {fmt(stake)} · tap an answer (or press 1–4)
+              </p>
             )}
           </>
         )}
@@ -417,46 +432,82 @@ function ClueModal({
   );
 }
 
+function Wager({
+  wager,
+  setWager,
+  maxWager,
+  onLock,
+}: {
+  wager: number;
+  setWager: (n: number) => void;
+  maxWager: number;
+  onLock: () => void;
+}) {
+  return (
+    <div className="py-2 text-center">
+      <p className="display text-2xl text-accent-2">Daily Double!</p>
+      <p className="mt-2 text-muted">
+        Wager up to <b className="text-slate-100">{fmt(maxWager)}</b> before you
+        see the question.
+      </p>
+      <input
+        autoFocus
+        type="number"
+        min={5}
+        max={maxWager}
+        value={wager}
+        onChange={(e) =>
+          setWager(Math.min(maxWager, Math.max(5, +e.target.value)))
+        }
+        onKeyDown={(e) => e.key === "Enter" && onLock()}
+        className="mt-5 w-44 rounded-xl bg-white/95 px-4 py-3 text-center text-2xl font-bold text-ink outline-none"
+      />
+      <div>
+        <button
+          onClick={onLock}
+          className="display animate-glow mt-6 rounded-xl bg-gold px-8 py-3 font-bold text-ink transition hover:brightness-110"
+        >
+          Lock it in
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function Result({
-  judgement,
-  answer,
+  correct,
   stake,
+  explainer,
   onClose,
 }: {
-  judgement: Judgement;
-  answer: string;
+  correct: boolean;
   stake: number;
+  explainer?: string;
   onClose: () => void;
 }) {
   return (
-    <div className="mt-7 text-center">
+    <div className="animate-fade-up mt-6 text-center">
       <div
-        className={`display text-3xl font-bold ${
-          judgement.correct ? "text-emerald-300" : "text-red-300"
+        className={`display text-2xl sm:text-3xl ${
+          correct ? "text-good" : "text-bad"
         }`}
       >
-        {judgement.correct ? `Correct  +${fmt(stake)}` : `No  −${fmt(stake)}`}
+        {correct ? `Correct!  +${fmt(stake)}` : `Not quite  −${fmt(stake)}`}
       </div>
-      {!judgement.correct && (
-        <p className="mt-2 text-blue-100">
-          Correct response: <b className="text-white">{answer}</b>
-        </p>
-      )}
-      {judgement.quip && (
-        <p className="mt-3 italic text-jeop-gold">“{judgement.quip}”</p>
-      )}
-      {judgement.reason && (
-        <p className="mt-1 text-xs text-blue-200">{judgement.reason}</p>
+      {explainer && (
+        <p className="mx-auto mt-2 max-w-md text-sm text-muted">{explainer}</p>
       )}
       <button
         onClick={onClose}
-        className="mt-6 rounded-md bg-white/90 px-8 py-2.5 display font-bold text-jeop-blue-deep hover:bg-white"
+        className="display mt-5 rounded-xl bg-white/90 px-8 py-2.5 font-bold text-ink transition hover:bg-white"
       >
         Back to board
       </button>
     </div>
   );
 }
+
+/* --------------------------------------------------------------- end game */
 
 function GameOver({
   score,
@@ -472,7 +523,7 @@ function GameOver({
   const share = () => {
     const text = `I scored ${fmt(
       score
-    )} on Tonight's Edition — the daily AI Jeopardy. Lifetime accuracy ${acc}%. Can you beat it?`;
+    )} on Tonight's Edition — the daily AI quiz show. Lifetime accuracy ${acc}%. Can you beat it?`;
     navigator.clipboard?.writeText(text).then(() => {
       setCopied(true);
       setTimeout(() => setCopied(false), 1800);
@@ -487,30 +538,30 @@ function GameOver({
           ? "You held the line. The board can be cruel."
           : "Rough night at the podium — but you'll be back.";
   return (
-    <div className="animate-pop mx-auto max-w-xl rounded-xl bg-jeop-blue p-8 text-center tile-shadow">
-      <h2 className="display text-2xl text-jeop-gold">That&apos;s our show!</h2>
+    <div className="animate-pop glass card-shadow mx-auto max-w-xl rounded-3xl p-8 text-center">
+      <h2 className="display text-2xl text-accent-2">That&apos;s our show!</h2>
       <div
-        className={`display mt-3 text-6xl font-bold ${
-          score < 0 ? "text-red-300" : "text-white"
+        className={`display mt-3 text-6xl ${
+          score < 0 ? "text-bad" : "gold-text"
         }`}
       >
         {fmt(score)}
       </div>
-      <p className="mt-3 text-blue-100">{verdict}</p>
-      <p className="mt-2 text-sm text-blue-200">
-        Lifetime accuracy: <b>{acc}%</b> over {stats.total} clues —
-        tomorrow&apos;s board adapts to this.
+      <p className="mt-3 text-slate-200">{verdict}</p>
+      <p className="mt-2 text-sm text-muted">
+        Lifetime accuracy: <b className="text-slate-200">{acc}%</b> over{" "}
+        {stats.total} questions — tomorrow&apos;s board adapts to this.
       </p>
       <div className="mt-6 flex justify-center gap-3">
         <button
           onClick={share}
-          className="rounded-md bg-jeop-gold px-6 py-2.5 display font-bold text-jeop-blue-deep hover:brightness-110"
+          className="display rounded-xl bg-gold px-6 py-2.5 font-bold text-ink transition hover:brightness-110"
         >
           {copied ? "Copied!" : "Share score"}
         </button>
         <button
           onClick={onReplay}
-          className="rounded-md bg-white/90 px-6 py-2.5 display font-bold text-jeop-blue-deep hover:bg-white"
+          className="display rounded-xl bg-white/90 px-6 py-2.5 font-bold text-ink transition hover:bg-white"
         >
           New board
         </button>
@@ -522,16 +573,21 @@ function GameOver({
 function Loading() {
   return (
     <div className="flex flex-col items-center justify-center py-24 text-center">
-      <div className="display animate-pulse text-2xl text-jeop-gold">
+      <div className="mb-5 flex gap-1.5">
+        {[0, 1, 2].map((i) => (
+          <span
+            key={i}
+            className="h-3 w-3 animate-bounce rounded-full bg-gold"
+            style={{ animationDelay: `${i * 0.15}s` }}
+          />
+        ))}
+      </div>
+      <div className="display animate-pulse text-2xl text-gold">
         Writing tonight&apos;s board…
       </div>
-      <p className="mt-2 text-sm text-slate-400">
+      <p className="mt-2 text-sm text-muted">
         Sampling the archive and reading today&apos;s headlines.
       </p>
     </div>
   );
-}
-
-function clamp01(n: number) {
-  return Math.max(0, Math.min(1, n));
 }

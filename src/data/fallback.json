@@ -1,0 +1,68 @@
+[
+  {
+    "category": "WORLD CAPITALS",
+    "difficulty": "standard",
+    "clues": [
+      { "value": 200, "question": "What is the capital of France?", "options": ["Paris", "Lyon", "Marseille", "Nice"], "answer": 0, "explainer": "Paris has been France's capital for over a thousand years." },
+      { "value": 400, "question": "What is the capital of Japan?", "options": ["Osaka", "Kyoto", "Tokyo", "Nagoya"], "answer": 2, "explainer": "Tokyo became the capital in 1868, replacing Kyoto." },
+      { "value": 600, "question": "What is the capital of Canada?", "options": ["Toronto", "Ottawa", "Vancouver", "Montreal"], "answer": 1, "explainer": "Ottawa was chosen as a compromise between English and French Canada." },
+      { "value": 800, "question": "What is the capital of Australia?", "options": ["Sydney", "Melbourne", "Canberra", "Perth"], "answer": 2, "explainer": "Canberra was purpose-built as the capital in 1913." },
+      { "value": 1000, "question": "What is the capital of Kazakhstan?", "options": ["Almaty", "Astana", "Bishkek", "Tashkent"], "answer": 1, "explainer": "Astana (briefly renamed Nur-Sultan) became the capital in 1997." }
+    ]
+  },
+  {
+    "category": "THE ANIMAL KINGDOM",
+    "difficulty": "standard",
+    "clues": [
+      { "value": 200, "question": "Which animal is the largest on Earth?", "options": ["African elephant", "Blue whale", "Giraffe", "Great white shark"], "answer": 1, "explainer": "Blue whales can grow to nearly 30 metres long." },
+      { "value": 400, "question": "How many legs does a spider have?", "options": ["Six", "Eight", "Ten", "Twelve"], "answer": 1, "explainer": "Eight legs is a defining feature of arachnids." },
+      { "value": 600, "question": "Which bird is famous for being unable to fly and living in Antarctica?", "options": ["Penguin", "Ostrich", "Kiwi", "Albatross"], "answer": 0, "explainer": "Penguins are flightless seabirds adapted to swimming." },
+      { "value": 800, "question": "What is a group of lions called?", "options": ["A pack", "A herd", "A pride", "A flock"], "answer": 2, "explainer": "Lions live in family groups called prides." },
+      { "value": 1000, "question": "Which mammal is the only one capable of true sustained flight?", "options": ["Flying squirrel", "Bat", "Sugar glider", "Colugo"], "answer": 1, "explainer": "Bats truly fly; the others only glide." }
+    ]
+  },
+  {
+    "category": "AT THE MOVIES",
+    "difficulty": "standard",
+    "clues": [
+      { "value": 200, "question": "Which movie features a young wizard named Harry attending Hogwarts?", "options": ["The Hobbit", "Harry Potter", "Narnia", "Percy Jackson"], "answer": 1, "explainer": "The Harry Potter films are based on J.K. Rowling's books." },
+      { "value": 400, "question": "In which movie does a clownfish search the ocean for his lost son?", "options": ["Shark Tale", "The Little Mermaid", "Finding Nemo", "Moana"], "answer": 2, "explainer": "Finding Nemo is a 2003 Pixar film." },
+      { "value": 600, "question": "Which film series features the character Iron Man?", "options": ["DC Universe", "Marvel Cinematic Universe", "Star Wars", "Transformers"], "answer": 1, "explainer": "Iron Man helped launch the Marvel Cinematic Universe in 2008." },
+      { "value": 800, "question": "Who directed the 1997 film 'Titanic'?", "options": ["Steven Spielberg", "James Cameron", "Christopher Nolan", "Ridley Scott"], "answer": 1, "explainer": "James Cameron also directed Avatar." },
+      { "value": 1000, "question": "Which 2019 film became the highest-grossing of all time at release?", "options": ["Avatar", "Avengers: Endgame", "Titanic", "Frozen II"], "answer": 1, "explainer": "Avengers: Endgame briefly overtook Avatar at the global box office." }
+    ]
+  },
+  {
+    "category": "SCIENCE BASICS",
+    "difficulty": "hard",
+    "clues": [
+      { "value": 200, "question": "What gas do plants absorb from the air to make food?", "options": ["Oxygen", "Nitrogen", "Carbon dioxide", "Hydrogen"], "answer": 2, "explainer": "Plants use carbon dioxide in photosynthesis." },
+      { "value": 400, "question": "What is the closest planet to the Sun?", "options": ["Venus", "Mercury", "Earth", "Mars"], "answer": 1, "explainer": "Mercury orbits nearest the Sun." },
+      { "value": 600, "question": "What is the chemical symbol for gold?", "options": ["Go", "Gd", "Au", "Ag"], "answer": 2, "explainer": "Au comes from the Latin 'aurum'." },
+      { "value": 800, "question": "What force keeps us anchored to the ground?", "options": ["Magnetism", "Gravity", "Friction", "Inertia"], "answer": 1, "explainer": "Gravity pulls objects with mass toward each other." },
+      { "value": 1000, "question": "How many bones are in the adult human body?", "options": ["206", "186", "226", "246"], "answer": 0, "explainer": "Adults have 206 bones; babies are born with more that fuse over time." }
+    ]
+  },
+  {
+    "category": "FOOD AROUND THE WORLD",
+    "difficulty": "standard",
+    "clues": [
+      { "value": 200, "question": "Which country is the birthplace of pizza and pasta?", "options": ["Spain", "Italy", "Greece", "France"], "answer": 1, "explainer": "Both dishes are icons of Italian cuisine." },
+      { "value": 400, "question": "What is the main ingredient in guacamole?", "options": ["Avocado", "Tomato", "Cucumber", "Pea"], "answer": 0, "explainer": "Guacamole is a mashed avocado dip from Mexico." },
+      { "value": 600, "question": "Sushi is a dish that originated in which country?", "options": ["China", "Thailand", "Japan", "Korea"], "answer": 2, "explainer": "Modern sushi developed in Japan." },
+      { "value": 800, "question": "Which spice, gram for gram, is the most expensive in the world?", "options": ["Vanilla", "Saffron", "Cardamom", "Cinnamon"], "answer": 1, "explainer": "Saffron is hand-harvested from crocus flowers." },
+      { "value": 1000, "question": "Feta is a cheese traditionally from which country?", "options": ["Italy", "France", "Greece", "Turkey"], "answer": 2, "explainer": "Feta has protected origin status in Greece." }
+    ]
+  },
+  {
+    "category": "FAMOUS FIRSTS",
+    "difficulty": "hard",
+    "clues": [
+      { "value": 200, "question": "Who was the first person to walk on the Moon?", "options": ["Buzz Aldrin", "Yuri Gagarin", "Neil Armstrong", "Michael Collins"], "answer": 2, "explainer": "Neil Armstrong stepped onto the Moon in July 1969." },
+      { "value": 400, "question": "What was the first widely used social network to reach a billion users?", "options": ["MySpace", "Facebook", "Twitter", "Instagram"], "answer": 1, "explainer": "Facebook passed one billion users in 2012." },
+      { "value": 600, "question": "Which country was the first to give women the right to vote nationally?", "options": ["United States", "United Kingdom", "New Zealand", "France"], "answer": 2, "explainer": "New Zealand granted women's suffrage in 1893." },
+      { "value": 800, "question": "Who was the first woman to win a Nobel Prize?", "options": ["Marie Curie", "Rosalind Franklin", "Dorothy Hodgkin", "Ada Lovelace"], "answer": 0, "explainer": "Marie Curie won the Physics prize in 1903." },
+      { "value": 1000, "question": "What was the first commercially successful personal computer company?", "options": ["IBM", "Microsoft", "Apple", "Dell"], "answer": 2, "explainer": "Apple's early machines helped launch the home-computer era." }
+    ]
+  }
+]

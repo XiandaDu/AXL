@@ -38,8 +38,9 @@ async function fetchHeadlines(): Promise<string[]> {
 }
 
 /**
- * Turn today's headlines into a single AI-written Jeopardy category.
- * This is the dynamic heart of the board — it can't exist without an LLM.
+ * Turn today's real headlines into ONE AI-written multiple-choice category.
+ * This is the dynamic, current-events heart of the board — it can't exist
+ * without an LLM and changes every day.
  */
 export async function generateLiveCategory(): Promise<Category | null> {
   if (!hasKey()) return null;
@@ -47,19 +48,23 @@ export async function generateLiveCategory(): Promise<Category | null> {
   if (headlines.length < 5) return null;
 
   const sys =
-    "You are a Jeopardy! head writer. Given today's real headlines, write ONE " +
-    "category of exactly 5 clues. Clues must be answerable from general " +
-    "awareness of current events — clever and fair, in Jeopardy's declarative " +
-    "style (the clue is a statement; the response is the question). Keep " +
-    "answers to a few words. Ascend in difficulty. Avoid anything offensive. " +
-    'Return ONLY JSON: {"category": string, "clues": [{"clue": string, ' +
-    '"answer": string}], "source": string} where source is a short label like ' +
-    '"Headlines, <month> <year>".';
+    "You write ONE multiple-choice trivia category of exactly 5 questions for a " +
+    "friendly daily quiz show, based on today's real headlines. Rules: write in " +
+    "plain, everyday language so anyone instantly understands the question — NO " +
+    "cryptic phrasing, NO 'this person...' riddles. Each question is a direct " +
+    "question. Give exactly 4 short answer options with ONE clearly correct. " +
+    "Order the 5 questions easy → hard. Each question gets a one-sentence " +
+    "explainer. Keep everything answerable from general awareness of recent " +
+    "news; avoid anything offensive or hyper-niche. Return ONLY JSON: " +
+    '{"category": string, "source": string, "clues": [{"question": string, ' +
+    '"options": [string, string, string, string], "answer": number, ' +
+    '"explainer": string}]} where answer is the 0-based index of the correct ' +
+    'option and source is a short label like "Headlines, <month> <year>".';
 
   try {
     const msg = await getClient().messages.create({
       model: WRITER_MODEL,
-      max_tokens: 900,
+      max_tokens: 1400,
       system: sys,
       messages: [
         {
@@ -76,19 +81,29 @@ export async function generateLiveCategory(): Promise<Category | null> {
       "{" + msg.content.map((b) => ("text" in b ? b.text : "")).join("");
     const parsed = extractJson<{
       category: string;
-      clues: { clue: string; answer: string }[];
       source?: string;
+      clues: {
+        question: string;
+        options: string[];
+        answer: number;
+        explainer?: string;
+      }[];
     }>(text);
-    if (!parsed.clues || parsed.clues.length < 5) return null;
+    const clues = (parsed.clues || []).filter(
+      (c) => c.question && Array.isArray(c.options) && c.options.length === 4
+    );
+    if (clues.length < 5) return null;
     return {
-      category: parsed.category?.toUpperCase() || "TODAY'S HEADLINES",
+      category: parsed.category?.toUpperCase() || "IN THE NEWS",
       difficulty: "hard",
       live: true,
       source: parsed.source || "Today's headlines",
-      clues: parsed.clues.slice(0, 5).map((c, i) => ({
+      clues: clues.slice(0, 5).map((c, i) => ({
         value: BOARD_VALUES[i],
-        clue: c.clue,
-        answer: c.answer,
+        question: c.question,
+        options: c.options.slice(0, 4),
+        answer: clampIdx(c.answer),
+        explainer: c.explainer,
       })),
     };
   } catch (e) {
@@ -97,6 +112,9 @@ export async function generateLiveCategory(): Promise<Category | null> {
   }
 }
 
+function clampIdx(n: number): number {
+  return Number.isInteger(n) && n >= 0 && n <= 3 ? n : 0;
+}
 function pad(n: number) {
   return String(n).padStart(2, "0");
 }
